@@ -6,6 +6,7 @@ module.exports = (app) => {
         getCreatableCategories,
         getEditableCategories,
         getDeletableCategories,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -13,7 +14,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, getCreatableCategories], building.create);
   
     // Retrieve all Buildings
-    router.get("/", [authenticate], building.findAll);
+    router.get("/", [authenticate, getPage], building.findAll);
   
     // Retrieve a single Building with id
     router.get("/:id", [authenticate], building.findOne);

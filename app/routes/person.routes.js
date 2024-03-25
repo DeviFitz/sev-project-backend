@@ -1,13 +1,13 @@
 module.exports = (app) => {
     const person = require("../controllers/person.controller.js");
-    const { authenticate } = require("../authorization/authorization.js");
+    const { authenticate, getPage } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
     // Create a new Person
     //router.post("/", [authenticate], person.create);
   
     // Retrieve all Persons
-    router.get("/", [authenticate], person.findAll);
+    router.get("/", [authenticate, getPage], person.findAll);
   
     // Retrieve a single Person with id
     router.get("/:id", [authenticate], person.findOne);

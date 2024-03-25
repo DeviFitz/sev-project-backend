@@ -6,6 +6,7 @@ module.exports = (app) => {
         checkCreateAlertType,
         checkEditAlertType,
         checkDeleteAlertType,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -13,7 +14,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, checkCreateAlertType], alertType.create);
   
     // Retrieve all AlertTypes
-    router.get("/", [authenticate], alertType.findAll);
+    router.get("/", [authenticate, getPage], alertType.findAll);
   
     // Retrieve a single AlertType with id
     router.get("/:id", [authenticate], alertType.findOne);

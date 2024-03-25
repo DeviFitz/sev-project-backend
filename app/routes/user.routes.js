@@ -7,6 +7,7 @@ module.exports = (app) => {
     checkViewUser,
     getEditUserPerms,
     checkRemoveUser,
+    getPage,
   } = require("../authorization/authorization.js");
   const router = require("express").Router();
 
@@ -14,7 +15,7 @@ module.exports = (app) => {
   router.post("/", [authenticate, getPermissions, checkCreateUser], user.create);
 
   // Retrieve all People
-  router.get("/", [authenticate, getPermissions, checkViewUser], user.findAll);
+  router.get("/", [authenticate, getPermissions, checkViewUser, getPage], user.findAll);
 
   // Retrieve a single User with id
   router.get("/:id", [authenticate, getPermissions, checkViewUser], user.findOne);

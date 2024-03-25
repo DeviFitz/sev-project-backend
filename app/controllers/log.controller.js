@@ -5,10 +5,9 @@ const Log = db.log;
 exports.create = async (req, res) => {
   // Validate request
   if (!req.body.date || !req.body.assetId || !req.body.authorId) {
-    res.status(400).send({
+    return res.status(400).send({
       message: "Content cannot be empty!",
     });
-    return;
   }
 
   // Create an Log
@@ -27,7 +26,7 @@ exports.create = async (req, res) => {
   };
 
   const type = await db.asset.findByPk(log.assetId, {
-    attributes: [],
+    attributes: ["id"],
     include: {
       model: db.assetType,
       as: "type",
@@ -56,6 +55,7 @@ exports.create = async (req, res) => {
 // Retrieve all Logs from the database.
 exports.findAll = (req, res) => {
   Log.findAll({
+    ...req.paginator,
     include: {
       model: db.asset,
       as: "asset",
@@ -83,6 +83,9 @@ exports.findAll = (req, res) => {
 // Find a single Log with an id
 exports.findOne = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid log id!",
+  });
 
   Log.findByPk(id, {
     include: {
@@ -118,6 +121,9 @@ exports.findOne = (req, res) => {
 // Update a Log by the id in the request
 exports.update = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid log id!",
+  });
 
   Log.update(req.body, {
     where: { id },
@@ -156,6 +162,10 @@ exports.update = (req, res) => {
 // Delete a Log with the specified id in the request
 exports.delete = async (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid log id!",
+  });
+
   const type = await Log.findByPk(id, {
     attributes: [],
     include: {
@@ -197,20 +207,3 @@ exports.delete = async (req, res) => {
     });
   });
 };
-
-// Delete all Logs from the database.
-// exports.deleteAll = (req, res) => {
-//   Log.destroy({
-//     where: {},
-//     truncate: false,
-//   })
-//   .then((nums) => {
-//     res.send({ message: `${nums} logs were deleted successfully!` });
-//   })
-//   .catch((err) => {
-//     res.status(500).send({
-//       message:
-//         err.message || "Some error occurred while removing all logs.",
-//     });
-//   });
-// };

@@ -6,6 +6,7 @@ module.exports = (app) => {
         checkCreateVendor,
         checkEditVendor,
         checkDeleteVendor,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -13,7 +14,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, checkCreateVendor], vendor.create);
   
     // Retrieve all Vendors
-    router.get("/", [authenticate], vendor.findAll);
+    router.get("/", [authenticate, getPage], vendor.findAll);
   
     // Retrieve a single Vendor with id
     router.get("/:id", [authenticate], vendor.findOne);

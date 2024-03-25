@@ -1,39 +1,10 @@
 const db = require("../models");
 const TemplateData = db.templateData;
 
-// Create and Save a new TemplateData
-exports.create = (req, res) => {
-  // Validate request
-  if (!req.body.value || !req.body.templateId || !req.body.fieldId) {
-    res.status(400).send({
-      message: "Content cannot be empty!",
-    });
-    return;
-  }
-
-  // Create a TemplateData
-  const templateData = {
-    id: req.body.id,
-    value: req.body.value,
-    templateId: req.body.templateId,
-    fieldId: req.body.fieldId,
-  };
-
-  // Save TemplateData in the database
-  TemplateData.create(templateData)
-  .then((data) => {
-    res.send(data);
-  })
-  .catch((err) => {
-    res.status(500).send({
-      message: err.message || "Some error occurred while creating the template data.",
-    });
-  });
-};
-
 // Retrieve all TemplateDatas from the database.
 exports.findAll = (req, res) => {
   TemplateData.findAll({
+    ...req.paginator,
     include: {
       model: db.assetTemplate,
       as: "template",
@@ -61,6 +32,9 @@ exports.findAll = (req, res) => {
 // Find a single TemplateData with an id
 exports.findOne = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid template data id!",
+  });
 
   TemplateData.findByPk(id, {
     include: {
@@ -96,7 +70,23 @@ exports.findOne = (req, res) => {
 // Update a TemplateData by the id in the request
 exports.update = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid template data id!",
+  });
 
+  if (req.body?.value !== undefined)
+  {
+    if (req.body.value !== null)
+      req.body.value = req.body.value.trim();
+    
+    if ((req.body.value?.length ?? 0) < 1) return res.status(400).send({
+      message: "Template data value cannot be updated to an empty value!",
+    });
+  }
+
+  if (req.body?.templateId !== undefined) delete req.body.templateId;
+  if (req.body?.fieldId !== undefined) delete req.body.fieldId;
+  
   TemplateData.update(req.body, {
     where: { id },
     include: {
@@ -130,45 +120,3 @@ exports.update = (req, res) => {
     });
   });
 };
-
-// Delete a TemplateData with the specified id in the request
-exports.delete = (req, res) => {
-  const id = req.params.id;
-
-  TemplateData.destroy({
-    where: { id },
-  })
-  .then((num) => {
-    if (num > 0) {
-      res.send({
-        message: "Template data was deleted successfully!",
-      });
-    } else {
-      res.send({
-        message: `Cannot delete templatedata with id=${id}. Maybe template data was not found!`,
-      });
-    }
-  })
-  .catch((err) => {
-    res.status(500).send({
-      message: "Could not delete template data with id=" + id,
-    });
-  });
-};
-
-// Delete all TemplateDatas from the database.
-// exports.deleteAll = (req, res) => {
-//   TemplateData.destroy({
-//     where: {},
-//     truncate: false,
-//   })
-//   .then((nums) => {
-//     res.send({ message: `${nums} template data were deleted successfully!` });
-//   })
-//   .catch((err) => {
-//     res.status(500).send({
-//       message:
-//         err.message || "Some error occurred while removing all template data.",
-//     });
-//   });
-// };

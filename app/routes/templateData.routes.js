@@ -6,6 +6,7 @@ module.exports = (app) => {
         getEditableCategories,
         getViewableCategories,
         checkEditTemplate,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -13,7 +14,7 @@ module.exports = (app) => {
     //router.post("/", [authenticate, getPermissions, getCreatableCategories /*Template Edit+*/], templateData.create);
   
     // Retrieve all TemplateDatas
-    router.get("/", [authenticate, getPermissions, getViewableCategories], templateData.findAll);
+    router.get("/", [authenticate, getPermissions, getViewableCategories, getPage], templateData.findAll);
   
     // Retrieve a single TemplateData with id
     router.get("/:id", [authenticate, getPermissions, getViewableCategories], templateData.findOne);

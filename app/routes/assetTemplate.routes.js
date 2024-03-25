@@ -10,6 +10,7 @@ module.exports = (app) => {
         checkCreateTemplate,
         checkEditTemplate,
         checkDeleteTemplate,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -17,7 +18,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, checkCreateTemplate, getCreatableCategories], assetTemplate.create);
   
     // Retrieve all AssetTemplates
-    router.get("/", [authenticate, getPermissions, getViewableCategories], assetTemplate.findAll);
+    router.get("/", [authenticate, getPermissions, getViewableCategories, getPage], assetTemplate.findAll);
   
     // Retrieve a single AssetTemplate with id
     router.get("/:id", [authenticate, getPermissions, getViewableCategories], assetTemplate.findOne);

@@ -5,10 +5,9 @@ const Room = db.room;
 exports.create = async (req, res) => {
   // Validate request
   if (!req.body.name || !req.body.buildingId) {
-    res.status(400).send({
+    return res.status(400).send({
       message: "Content cannot be empty!",
     });
-    return;
   }
 
   // Create a Room
@@ -19,7 +18,7 @@ exports.create = async (req, res) => {
   };
   
   const type = await db.building.findByPk(room.buildingId, {
-    attributes: [],
+    attributes: ["id"],
     include: {
       model: db.asset,
       as: "asset",
@@ -53,7 +52,9 @@ exports.create = async (req, res) => {
 
 // Retrieve all Rooms from the database.
 exports.findAll = (req, res) => {
-  Room.findAll()
+  Room.findAll({
+    ...req.paginator,
+  })
   .then((data) => {
     res.send(data);
   })
@@ -65,10 +66,41 @@ exports.findAll = (req, res) => {
 };
 
 // Find a single Room with an id
-exports.findOne = (req, res) => {
+exports.findOne = async (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid room id!",
+  });
 
-  Room.findByPk(id)
+  const full = req.body?.full != undefined;
+  let viewableCats = [];
+  if (full) {
+    const userGroup = !((req.requestingUser.dataValues.groupExpiration ?? undefined) <= new Date()) ?
+    await db.group.findByPk(req.requestingUser.dataValues.groupId)
+    : undefined;
+    req.requestingUser.dataValues.groupPriority = userGroup?.priority;
+    
+    // Get user's permissions
+    const permissions = new Set([
+      ...(await req.requestingUser.getPermissions()),
+      ...((await userGroup?.getPermissions()) ?? [])
+    ]);
+
+    req.requestingUser.dataValues.permissions = [...permissions.values()]
+    viewableCats = req.requestingUser.dataValues.permissions
+    .filter(permission => !!permission.categoryId && permission.name.match(/View/i)?.length > 0)
+    .map(permission => permission.categoryId);
+  }
+
+  const includes = req.body?.full != undefined ? [
+    {
+      model: db.asset,
+      as: "assets",
+      include: displayAssetIncludes(db.Sequelize.col("assets.id"), viewableCats),
+    },
+  ] : [];
+
+  Room.findByPk(id, { include: includes })
   .then((data) => {
     if (data) {
       res.send(data);
@@ -88,6 +120,9 @@ exports.findOne = (req, res) => {
 // Update a Room by the id in the request
 exports.update = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid room id!",
+  });
 
   Room.update(req.body, {
     where: { id },
@@ -132,6 +167,10 @@ exports.update = (req, res) => {
 // Delete a Room with the specified id in the request
 exports.delete = async (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid room id!",
+  });
+
   const type = await Room.findByPk(id, {
     attributes: [],
     include: {
@@ -181,20 +220,3 @@ exports.delete = async (req, res) => {
     });
   });
 };
-
-// Delete all Rooms from the database.
-// exports.deleteAll = (req, res) => {
-//   Room.destroy({
-//     where: {},
-//     truncate: false,
-//   })
-//   .then((nums) => {
-//     res.send({ message: `${nums} rooms were deleted successfully!` });
-//   })
-//   .catch((err) => {
-//     res.status(500).send({
-//       message:
-//         err.message || "Some error occurred while removing all rooms.",
-//     });
-//   });
-// };

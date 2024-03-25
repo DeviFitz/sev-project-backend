@@ -6,6 +6,7 @@ module.exports = (app) => {
         checkCreateGroup,
         checkEditGroup,
         checkDeleteGroup,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -13,7 +14,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, checkCreateGroup], group.create);
   
     // Retrieve all Groups
-    router.get("/", [authenticate], group.findAll);
+    router.get("/", [authenticate, getPage], group.findAll);
   
     // Retrieve a single Group with id
     router.get("/:id", [authenticate], group.findOne);

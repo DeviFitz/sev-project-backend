@@ -6,10 +6,9 @@ exports.create = async (req, res) => {
   // Validate request
   if (!req.body.date || !req.body.status || !req.body.typeId || !req.body.assetId)
   {
-    res.status(400).send({
+    return res.status(400).send({
       message: "Content cannot be empty!",
     });
-    return;
   }
 
   // Create an Alert
@@ -23,7 +22,7 @@ exports.create = async (req, res) => {
   };
 
   const type = await db.asset.findByPk(alert.assetId, {
-    attributes: [],
+    attributes: ["id"],
     include: {
       model: db.assetType,
       as: "type",
@@ -52,6 +51,7 @@ exports.create = async (req, res) => {
 // Retrieve all Alerts from the database.
 exports.findAll = (req, res) => {
   Alert.findAll({
+    ...req.paginator,
     include: {
       model: db.asset,
       as: "asset",
@@ -79,6 +79,9 @@ exports.findAll = (req, res) => {
 // Find a single Alert with an id
 exports.findOne = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid alert id!",
+  });
 
   Alert.findByPk(id, {
     include: {
@@ -114,6 +117,9 @@ exports.findOne = (req, res) => {
 // Update an Alert by the id in the request
 exports.update = async (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid alert id!",
+  });
   
   Alert.update(req.body, {
     where: { id },
@@ -152,8 +158,12 @@ exports.update = async (req, res) => {
 // Delete an Alert with the specified id in the request
 exports.delete = async (req, res) => {
   const id = req.params.id;
-  const type = await Alert.findByPk(id, {
-    attributes: [],
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid alert id!",
+  });
+  
+  const target = await Alert.findByPk(id, {
+    attributes: ["id"],
     include: {
       model: db.asset,
       as: "asset",
@@ -171,7 +181,7 @@ exports.delete = async (req, res) => {
     },
   });
 
-  if (!type) return res.status(404).send({
+  if (!target) return res.status(404).send({
     message: "Error deleting alert! Maybe alert was not found or user is unauthorized.",
   });
 
@@ -188,26 +198,8 @@ exports.delete = async (req, res) => {
     }
   })
   .catch((err) => {
-    console.log(err)
     res.status(500).send({
       message: "Could not delete alert with id=" + id,
     });
   });
 };
-
-// Delete all Alerts from the database.
-// exports.deleteAll = (req, res) => {
-//   Alert.destroy({
-//     where: {},
-//     truncate: false,
-//   })
-//   .then((nums) => {
-//     res.send({ message: `${nums} alerts were deleted successfully!` });
-//   })
-//   .catch((err) => {
-//     res.status(500).send({
-//       message:
-//         err.message || "Some error occurred while removing all alerts.",
-//     });
-//   });
-// };

@@ -10,6 +10,7 @@ module.exports = (app) => {
         checkCreateAssetType,
         checkEditAssetType,
         checkDeleteAssetType,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -17,7 +18,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, checkCreateAssetType, getCreatableCategories], assetType.create);
   
     // Retrieve all AssetTypes
-    router.get("/", [authenticate, getPermissions, getViewableCategories], assetType.findAll);
+    router.get("/", [authenticate, getPermissions, getViewableCategories, getPage], assetType.findAll);
   
     // Retrieve a single AssetType with id
     router.get("/:id", [authenticate, getPermissions, getViewableCategories], assetType.findOne);

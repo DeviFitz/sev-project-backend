@@ -6,6 +6,7 @@ module.exports = (app) => {
         checkCreateFieldList,
         checkEditFieldList,
         checkDeleteFieldList,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -13,7 +14,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, checkCreateFieldList], fieldList.create);
   
     // Retrieve all FieldLists
-    router.get("/", [authenticate, getPermissions], fieldList.findAll);
+    router.get("/", [authenticate, getPermissions, getPage], fieldList.findAll);
   
     // Retrieve a single FieldList with id
     router.get("/:id", [authenticate, getPermissions], fieldList.findOne);

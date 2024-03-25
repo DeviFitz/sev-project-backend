@@ -6,6 +6,7 @@ module.exports = (app) => {
         getEditableCategories,
         getViewableCategories,
         checkEditAssetType,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -13,7 +14,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, checkEditAssetType, getEditableCategories], assetField.create);
   
     // Retrieve all AssetFields
-    router.get("/", [authenticate, getPermissions, getViewableCategories], assetField.findAll);
+    router.get("/", [authenticate, getPermissions, getViewableCategories, getPage], assetField.findAll);
   
     // Retrieve a single AssetField with id
     router.get("/:id", [authenticate, getPermissions, getViewableCategories], assetField.findOne);

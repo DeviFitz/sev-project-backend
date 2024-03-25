@@ -1,7 +1,7 @@
 const db = require("../models");
 const AssetData = db.assetData;
 
-// Create and Save a new AssetData
+//#region Create and Save a new AssetData
 // exports.create = async (req, res) => {
 //   // Validate request
 //   if (!req.body.assetId || !req.body.fieldId) {
@@ -45,10 +45,12 @@ const AssetData = db.assetData;
 //     });
 //   });
 // };
+//#endregion
 
 // Retrieve all AssetData from the database.
 exports.findAll = (req, res) => {
   AssetData.findAll({
+    ...req.paginator,
     include: {
       model: db.asset,
       as: "asset",
@@ -76,6 +78,9 @@ exports.findAll = (req, res) => {
 // Find a single AssetData with an id
 exports.findOne = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid asset data id!",
+  });
 
   AssetData.findByPk(id, {
     include: {
@@ -109,81 +114,108 @@ exports.findOne = (req, res) => {
 };
 
 // Update an AssetData by the id in the request
-exports.update = (req, res) => {
+exports.update = async (req, res) => {
   const id = req.params.id;
-
-  AssetData.update(req.body, {
-    where: { id },
-    include: {
-      model: db.asset,
-      as: "asset",
-      attributes: [],
-      required: true,
-      include: {
-        model: db.assetType,
-        as: "type",
-        attributes: [],
-        required: true,
-        where: { categoryId: req.requestingUser.dataValues.editableCategories },
-      },
-    },
-  })
-  .then((num) => {
-    if (num > 0) {
-      res.send({
-        message: "Asset data was updated successfully.",
-      });
-    } else {
-      res.send({
-        message: `Cannot update asset data with id=${id}. Maybe asset data was not found, req.body is empty, or user is unauthorized!`,
-      });
-    }
-  })
-  .catch((err) => {
-    res.status(500).send({
-      message: "Error updating asset data with id=" + id,
-    });
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid asset data id!",
   });
+
+  if (req.body?.value !== undefined)
+  {
+    if (req.body.value !== null)
+      req.body.value = req.body.value.trim();
+    
+    if ((req.body.value?.length ?? 0) < 1) return res.status(400).send({
+      message: "Asset data value cannot be updated to an empty value!",
+    });
+  }
+
+  if (req.body?.assetId !== undefined) delete req.body.assetId;
+  if (req.body?.fieldId !== undefined) delete req.body.fieldId;
+
+  const t = await db.sequelize.transaction();
+  let error = false;
+
+  try {
+    const target = await AssetData.findByPk(id, {
+      where: { id },
+      include: {
+        model: db.asset,
+        as: "asset",
+        attributes: ["id"],
+        required: true,
+        include: {
+          model: db.assetType,
+          as: "type",
+          attributes: ["id"],
+          required: true,
+          where: { categoryId: req.requestingUser.dataValues.editableCategories },
+          include: {
+            model: db.assetField,
+            as: "identifier",
+            attributes: ["id"],
+            required: false,
+            where: { id: db.Sequelize.col("assetData.fieldId") },
+          },
+        },
+      },
+    });
+
+    if (!target)
+    {
+      res.status(404).send({
+        message: "Error updating asset data! Maybe user is unauthorized or asset data was not found.",
+      });
+      throw new Error();
+    }
+    
+    target.set(req.body)
+
+    // If the data's type's identifier exists, check to make sure the asset data is unique across its sibling identifiers
+    const identifierId = target.dataValues.asset.dataValues.type.dataValues?.identifier?.dataValues?.id;
+    if (!isNaN(parseInt(identifierId)))
+    {
+      const family = (await db.assetField.findByPk(identifierId, {
+        attributes: [],
+        include: {
+          model: AssetData,
+          as: "assetData",
+          attributes: ["id", "value"],
+        },
+      }))?.get({ plain: true });
+
+      if (!family) {
+        res.status(500).send({
+          message: "Error retrieving identifier and data!",
+        });
+        throw new Error();
+      }
+
+      if (family.assetData.some(data => data.id != id && data.value == target.dataValues.value)) {
+        res.status(400).send({
+          message: "Error updating asset data! Asset data is an identifier but is not unique to its asset.",
+        });
+        throw new Error();
+      }
+    }
+
+    await target.save({ transaction: t })
+    .catch(err => {
+      error = true;
+      res.status(500).send({
+        message: "Error updating asset data with id=" + id,
+      });
+    });
+
+    if (error) throw new Error();
+
+    res.send({
+      message: "Asset data was updated successfully.",
+    });
+
+    await t.commit();
+  }
+  catch {
+    t.rollback();
+  }
 };
-
-// Delete an AssetData with the specified id in the request
-// exports.delete = (req, res) => {
-//   const id = req.params.id;
-
-//   AssetData.destroy({
-//     where: { id: id },
-//   })
-//   .then((num) => {
-//     if (num == 1) {
-//       res.send({
-//         message: "Asset data was deleted successfully!",
-//       });
-//     } else {
-//       res.send({
-//         message: `Cannot delete asset data with id=${id}. Maybe asset data was not found!`,
-//       });
-//     }
-//   })
-//   .catch((err) => {
-//     res.status(500).send({
-//       message: "Could not delete asset data with id=" + id,
-//     });
-//   });
-// };
-
-// Delete all AssetDatas from the database.
-// exports.deleteAll = (req, res) => {
-//   AssetData.destroy({
-//     where: {},
-//     truncate: false,
-//   })
-//   .then((nums) => {
-//     res.send({ message: `${nums} asset data were deleted successfully!` });
-//   })
-//   .catch((err) => {
-//     res.status(500).send({
-//       message:
-//         err.message || "Some error occurred while removing all asset data.",
-//     });
-//   });
-// };

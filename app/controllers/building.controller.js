@@ -1,14 +1,14 @@
 const db = require("../models");
+const { displayAssetIncludes } = require("./asset.controller");
 const Building = db.building;
 
 // Create and Save a new Building
 exports.create = async (req, res) => {
   // Validate request
   if (!req.body.abbreviation || !req.body.assetId) {
-    res.status(400).send({
+    return res.status(400).send({
       message: "Content cannot be empty!",
     });
-    return;
   }
 
   // Create a Building
@@ -19,7 +19,7 @@ exports.create = async (req, res) => {
   };
 
   const type = await db.asset.findByPk(building.assetId, {
-    attributes: [],
+    attributes: ["id"],
     include: {
       model: db.assetType,
       as: "type",
@@ -47,7 +47,9 @@ exports.create = async (req, res) => {
 
 // Retrieve all Buildings from the database.
 exports.findAll = (req, res) => {
-  Building.findAll()
+  Building.findAll({
+    ...req.paginator,
+  })
   .then((data) => {
     res.send(data);
   })
@@ -59,10 +61,51 @@ exports.findAll = (req, res) => {
 };
 
 // Find a single Building with an id
-exports.findOne = (req, res) => {
+exports.findOne = async (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid building id!",
+  });
 
-  Building.findByPk(id)
+  const full = req.query?.full != undefined;
+  const includes = [];
+  if (full) {
+    const userGroup = !((req.requestingUser.dataValues.groupExpiration ?? undefined) <= new Date()) ?
+    await db.group.findByPk(req.requestingUser.dataValues.groupId)
+    : undefined;
+    req.requestingUser.dataValues.groupPriority = userGroup?.priority;
+    
+    // Get user's permissions
+    const permissions = new Set([
+      ...(await req.requestingUser.getPermissions()),
+      ...((await userGroup?.getPermissions()) ?? [])
+    ]);
+
+    const viewableCats = [...permissions.values()]
+    .filter(permission => !!permission.categoryId && permission.name.match(/View/i)?.length > 0)
+    .map(permission => permission.categoryId);
+
+    includes.push(...[
+      {
+        model: db.room,
+        as: "rooms",
+        include: {
+          model: db.asset,
+          as: "assets",
+          attributes: ["id"],
+          include: displayAssetIncludes(db.Sequelize.col("assets.id"), viewableCats),
+        },
+      },
+      {
+        model: db.asset,
+        as: "asset",
+        attributes: ["id"],
+        include: displayAssetIncludes(null, viewableCats),
+      },
+    ]);
+  }
+
+  Building.findByPk(id, { include: includes })
   .then((data) => {
     if (data) {
       res.send(data);
@@ -82,6 +125,9 @@ exports.findOne = (req, res) => {
 // Update a Building by the id in the request
 exports.update = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid building id!",
+  });
 
   Building.update(req.body, {
     where: { id },
@@ -120,13 +166,16 @@ exports.update = (req, res) => {
 // Delete a Building with the specified id in the request
 exports.delete = async (req, res) => {
   const id = req.params.id;
-  const type = await Building.findByPk(id, {
-    attributes: [],
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid building id!",
+  });
+
+  const building = await Building.findByPk(id, {
+    attributes: ["id"],
     include: {
       model: db.asset,
       as: "asset",
-      attributes: [],
-      raw: true,
+      attributes: ["id"],
       required: true,
       include: {
         model: db.assetType,
@@ -134,18 +183,15 @@ exports.delete = async (req, res) => {
         attributes: [],
         where: { categoryId: req.requestingUser.dataValues.deletableCategories },
         required: true,
-        raw: true,
       },
     },
   });
 
-  if (!type) return res.status(404).send({
+  if (!building) return res.status(404).send({
     message: "Error deleting building! Maybe building was not found or user is unauthorized.",
   });
 
-  Building.destroy({
-    where: { id },
-  })
+  building.dataValues.asset.destroy()
   .then((num) => {
     if (num > 0) {
       res.send({
@@ -163,20 +209,3 @@ exports.delete = async (req, res) => {
     });
   });
 };
-
-// Delete all Buildings from the database.
-// exports.deleteAll = (req, res) => {
-//   Building.destroy({
-//     where: {},
-//     truncate: false,
-//   })
-//   .then((nums) => {
-//     res.send({ message: `${nums} buildings were deleted successfully!` });
-//   })
-//   .catch((err) => {
-//     res.status(500).send({
-//       message:
-//         err.message || "Some error occurred while removing all buildings.",
-//     });
-//   });
-// };

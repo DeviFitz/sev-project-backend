@@ -6,7 +6,8 @@ module.exports = (app) => {
         getCreatableCategories,
         getEditableCategories,
         getViewableCategories,
-        getDeletableCategories
+        getDeletableCategories,
+        getPage
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -14,7 +15,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, getCreatableCategories], asset.create);
   
     // Retrieve all Assets
-    router.get("/", [authenticate, getPermissions, getViewableCategories], asset.findAll);
+    router.get("/", [authenticate, getPermissions, getViewableCategories, getPage], asset.findAll);
   
     // Retrieve a single Asset with id
     router.get("/:id", [authenticate, getPermissions, getViewableCategories], asset.findOne);

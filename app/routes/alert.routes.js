@@ -6,6 +6,7 @@ module.exports = (app) => {
         getEditableCategories,
         getViewableCategories,
         getDeletableCategories,
+        getPage,
     } = require("../authorization/authorization.js");
     const router = require("express").Router();
   
@@ -13,7 +14,7 @@ module.exports = (app) => {
     router.post("/", [authenticate, getPermissions, getEditableCategories], alert.create);
   
     // Retrieve all Alerts
-    router.get("/", [authenticate, getPermissions, getViewableCategories], alert.findAll);
+    router.get("/", [authenticate, getPermissions, getViewableCategories, getPage], alert.findAll);
   
     // Retrieve a single Alert with id
     router.get("/:id", [authenticate, getPermissions, getViewableCategories], alert.findOne);

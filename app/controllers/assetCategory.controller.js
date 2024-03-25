@@ -17,48 +17,62 @@ exports.create = async (req, res) => {
     description: req.body.description,
   };
 
-  // Save AssetCategory in the database
-  let error = false;
-  let response = {};
-  await AssetCategory.create(assetCategory)
-  .then((data) => {
-    response = data;
-  })
-  .catch((err) => {
-    res.status(500).send({
-      message: err.message || "Some error occurred while creating the asset category.",
-    });
-    error = true;
-  });
+  const t = await db.sequelize.transaction();
 
-  if (error) return;
+  try {
+    // Save AssetCategory in the database
+    let error = false;
+    let response = {};
+    await AssetCategory.create(assetCategory, { transaction: t })
+    .then((data) => {
+      response = data;
+    })
+    .catch((err) => {
+      res.status(500).send({
+        message: err.message || "Some error occurred while creating the asset category.",
+      });
+      error = true;
+    });
 
-  const categoryPermissions = this.getPermissions(response.dataValues.id, assetCategory.name);
-  
-  Permission.bulkCreate(categoryPermissions)
-  .then(async (data) => {
-    new Set(["Super User", ...(req.body.permittedGroups ?? [])])
-    .forEach(async (groupName) => {
-      const group = await db.group.findOne({ where: { name: groupName } })
-      if (!!group) await group.addPermissions(data);
+    if (error) throw new Error();
+
+    const categoryPermissions = this.getPermissions(response.dataValues.id, assetCategory.name);
+    
+    await Permission.bulkCreate(categoryPermissions, { transaction: t })
+    .then(async (data) => {
+      const groupNames = [...new Set(["Super User", ...(req.body.permittedGroups ?? [])]).values()];
+      const groups = await db.group.findAll({ where: { name: groupNames }});
+      await Promise.all(groups.map(group => group.addPermissions(data, { transaction: t })))
+      .catch(err => {
+        error = true;
+      });
+
+      if (!error) res.send(response.get({ plain: true }));
+    })
+    .catch(err => {
+      error = true;
     });
-    res.send(response.get({ plain: true }));
-  })
-  .catch(async (err) => {
-    await AssetCategory.destroy({ where: {
-      id: response.dataValues.id,
-    }});
-    res.status(500).send({
-      message: err.message || "Some error occurred while creating the asset category's permissions.",
-    });
-  });
+
+    if (error)
+    {
+      res.status(500).send({
+        message: err.message || "Some error occurred while creating the asset category's permissions.",
+      });
+      throw new Error();
+    }
+
+    await t.commit();
+  }
+  catch {
+    await t.rollback();
+  }
 };
 
 // Retrieve all AssetCategories from the database.
 exports.findAll = (req, res) => {
-  const id = req.query.id;
-
-  AssetCategory.findAll()
+  AssetCategory.findAll({
+    ...req.paginator,
+  })
   .then((data) => {
     res.send(data);
   })
@@ -72,6 +86,9 @@ exports.findAll = (req, res) => {
 // Find a single AssetCategory with an id
 exports.findOne = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid asset category id!",
+  });
 
   AssetCategory.findByPk(id)
   .then((data) => {
@@ -91,40 +108,79 @@ exports.findOne = (req, res) => {
 };
 
 // Update an AssetCategory by the id in the request
-exports.update = (req, res) => {
+exports.update = async (req, res) => {
   const id = req.params.id;
-
-  AssetCategory.update(req.body, { where: { id } })
-  .then(async (num) => {
-    if (num > 0) {
-      // If the category's name changed, we need to update its permissions
-      if (!!req.body?.name)
-      {
-        const permissions = (await Permission.findAll({
-          where: { categoryId: id },
-        }))?.map(permission => permission.get({ plain: true }));
-
-        await Promise.all(permissions?.map(async (permission) => {
-          permission.name = permission.name.replace(/"(\W|\w)*"/, `\"${req.body.name}\"`);
-          permission.description = permission.description.replace(/"(\W|\w)*"/, `\"${req.body.name}\"`);
-          await Permission.update(permission, { where: { id: permission.id } });
-        }));
-      }
-
-      res.send({
-        message: "Asset category was updated successfully.",
-      });
-    } else {
-      res.send({
-        message: `Cannot update asset category with id=${id}. Maybe asset category was not found or req.body is empty!`,
-      });
-    }
-  })
-  .catch((err) => {
-    res.status(500).send({
-      message: "Error updating asset category with id=" + id,
-    });
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid asset category id!",
   });
+
+  const t = await db.sequelize.transaction();
+  let error = false;
+
+  try {
+    const target = await AssetCategory.findByPk(id, {
+      include: {
+        model: Permission,
+        as: "permissions",
+        attributes: ["id", "name", "description"],
+      },
+    });
+
+    if (!target) {
+      res.status(404).send({
+        message: `Error updating asset category with id=${id}! Maybe category was not found or user is unauthorized.`,
+      });
+      throw new Error();
+    }
+
+    const changeName = (req.body?.name ?? target.dataValues.name) !== target.dataValues.name;
+
+    // Update permissions if the category's name has been changed
+    if (changeName)
+    {
+      await Promise.all(target.dataValues.permissions?.map(permission => {
+        permission.name = permission.name.replace(/"(\W|\w)*"/, `\"${req.body.name}\"`);
+        permission.description = permission.description.replace(/"(\W|\w)*"/, `\"${req.body.name}\"`);
+        return permission.save({ transaction: t })
+        .catch(err => error = true);
+      }));
+  
+      if (error) {
+        res.status(500).send({
+          message: "Error updating asset category's permissions!",
+        });
+        throw new Error();
+      }
+    }
+
+    target.set(req.body);
+    await target.save({ transaction: t })
+    .catch(err => {
+      error = true;
+      res.status(500).send({
+        message: "Error saving changes to asset category!",
+      });
+    });
+
+    if (error) throw new Error();
+    
+    await t.commit()
+    .catch(err => {
+      error = true;
+      res.status(500).send({
+        message: "Error committing changes!",
+      });
+    });
+    
+    if (error) throw new Error();
+    
+    res.send({
+      message: "Asset category was updated successfully.",
+    });
+  }
+  catch {
+    t.rollback();
+  }
 };
 
 // Delete an AssetCategory with the specified id in the request
@@ -178,4 +234,9 @@ exports.getPermissions = (categoryId, categoryName) => [
     description: `Gives permission to view permitted items under the "${categoryName}" asset category.`,
     categoryId,
   },
-]
+  {
+    name: `Report For Category: "${categoryName}"`,
+    description: `Gives permission to generate reports including "${categoryName}" and its dependents.`,
+    categoryId,
+  },
+];

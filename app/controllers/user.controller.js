@@ -1,5 +1,6 @@
 const db = require("../models");
 const User = db.user;
+const { normalizePermissions, denormalizePermissions } = require("./permission.controller");
 
 // Create and Save a new User
 exports.create = async (req, res) => {
@@ -42,7 +43,9 @@ exports.create = async (req, res) => {
 
 // Retrieve all People from the database.
 exports.findAll = (req, res) => {
-  User.findAll()
+  User.findAll({
+    ...req.paginator,
+  })
   .then((data) => {
     res.send(data.map(user => user.get({ plain: true })));
   })
@@ -56,11 +59,47 @@ exports.findAll = (req, res) => {
 // Find a single User with an id
 exports.findOne = (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid user id!",
+  });
 
-  User.findByPk(id)
+  const queries = req.query;
+  const includes = queries?.full != undefined ?
+  [
+    {
+      model: db.group,
+      as: "group",
+      attributes: ["id", "name"],
+      include: {
+        model: db.permission,
+        attributes: ["name", "categoryId"],
+        through: {
+          model: db.groupPermission,
+          attributes: [],
+        },
+      }
+    },
+    {
+      model: db.person,
+      as: "person",
+      attributes: ["fName", "lName", "email"],
+    },
+    {
+      model: db.permission,
+      attributes: ["name", "categoryId"],
+      through: {
+        model: db.userPermission,
+        attributes: [],
+      },
+    },
+  ] : [];
+
+  User.findByPk(id, {
+    include: includes,
+  })
   .then((data) => {
     if (!!data) {
-      res.send(data.get({ plain: true }));
+      res.send(normalizePermissions(data.get({ plain: true })));
     } else {
       res.status(404).send({
         message: `Cannot find User with id=${id}.`,
@@ -77,17 +116,30 @@ exports.findOne = (req, res) => {
 // Update a User by the id in the request
 exports.update = async (req, res) => {
   const id = req.params.id;
-
-  const target = await User.findByPk(id, {
-    include: [{
-      model: db.group,
-      as: "group",
-      attributes: ['priority'],
-    }],
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid user id!",
   });
 
-  if (!target) return res.send({
-    message: `Cannot update User with id=${id}. Maybe User was not found or req.body is empty!`,
+  const target = await User.findByPk(id, {
+    include: [
+      {
+        model: db.group,
+        as: "group",
+        attributes: ['priority'],
+      },
+      {
+        model: db.permission,
+        attributes: ["id"],
+        through: {
+          model: db.userPermission,
+          attributes: [],
+        },
+      },
+    ],
+  });
+
+  if (!target) return res.status(400).send({
+    message: `Cannot update User with id=${id}. Maybe User was not found!`,
   });
 
   const targetPrio = target.dataValues?.group?.dataValues?.priority;
@@ -114,8 +166,9 @@ exports.update = async (req, res) => {
     blocked: req.body.blocked,
     groupExpiration: req.body.groupExpiration,
     groupId: req.body.groupId,
+    permissions: req.body?.permissions,
   };
-
+  
   // Check to make sure that user can be edited based on their priority and the requestor's permissions
   if (params.blocked != undefined && params.blocked != null && params.blocked != target.dataValues.blocked)
   {
@@ -140,7 +193,7 @@ exports.update = async (req, res) => {
       message: "Unauthorized! User does not have permission to assign users to groups.",
     });
   }
-
+  
   if (params.groupId != undefined && params.groupId != target.dataValues.groupId)
   {
     if (editPerms.superAssign || (editPerms.assign && subEdit))
@@ -164,22 +217,78 @@ exports.update = async (req, res) => {
     });
   }
 
-  target.save()
-  .then((data) => {
-    res.send({
-      message: "User was updated successfully.",
+  let error = false;
+  let setPerms = false;
+  if (params?.permissions != undefined)
+  {
+    const permissions = target.dataValues?.permissions?.map(permission => permission?.dataValues?.id);
+    let denormalizedPerms;
+    await denormalizePermissions(params)
+    .then(data => {
+      denormalizedPerms = data?.permissions;
+    })
+    .catch(err => {
+      error = true;
+      res.status(500).send({
+        message: "Error reading permissions.",
+      });
+    })
+
+    if (error) return;
+
+    if (permissions?.length != denormalizedPerms?.length || permissions.some((val, i, arr) => val != denormalizedPerms?.[i]))
+    {
+      if (editPerms.superPermit || (editPerms.permit && subEdit))
+        setPerms = true;
+      else if (editPerms.permit) return res.status(401).send({
+        message: "Unauthorized! User does not have permission to give or revoke permissions from users of equal priority.",
+      });
+      else return res.status(401).send({
+        message: "Unauthorized! User does not have permission to give or revoke permissions from users.",
+      });
+    }
+  }
+
+  const t = await db.sequelize.transaction();
+  try {
+    if (setPerms) await target.setPermissions(params.permissions, { transaction: t })
+    .catch(err => {
+      error = true;
+      res.status(500).send({
+        message: "Error updating user's permissions!",
+      });
     });
-  })
-  .catch((err) => {
-    res.status(500).send({
-      message: "Error updating User with id=" + id,
+
+    if (error) throw new Error();
+
+    await target.save({ transaction: t })
+    .then((data) => {
+      res.send({
+        message: "User was updated successfully.",
+      });
+    })
+    .catch((err) => {
+      error = true;
+      res.status(500).send({
+        message: "Error updating User with id=" + id,
+      });
     });
-  });
+
+    if (error) throw new Error();
+
+    await t.commit();
+  }
+  catch {
+    await t.rollback();
+  }
 };
 
 // Delete a User with the specified id in the request
 exports.delete = async (req, res) => {
   const id = req.params.id;
+  if (isNaN(parseInt(id))) return res.status(400).send({
+    message: "Invalid user id!",
+  });
   
   const target = (await User.findByPk(id, {
     include: [{

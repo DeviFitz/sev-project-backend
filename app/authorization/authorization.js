@@ -2,6 +2,18 @@ const db = require("../models");
 const Session = db.session;
 const User = db.user;
 
+/**Creates and appends an object for pagination if needed*/
+const getPage = async (req, res, next) => {
+  const page = parseInt(req.query.page);
+  const limit = parseInt(req.query.limit);
+  req.paginator =  !!page && !!limit && page > 0 && limit > 0 ?
+  {
+    offset: (page - 1) * limit,
+    limit,
+  } : {};
+  next();
+};
+
 /**Determines whether the user has a valid session and is not blocked*/
 const authenticate = async (req, res, next) => {
   const authHeader = req.get("authorization");
@@ -431,4 +443,7 @@ module.exports = {
   checkViewUser,
   getEditUserPerms,
   checkRemoveUser,
+  getPage,
+  checkHasPermission,
+  PermTypes,
 };
